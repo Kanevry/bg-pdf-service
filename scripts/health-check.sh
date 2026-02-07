@@ -1,0 +1,233 @@
+#!/usr/bin/env bash
+# Health Check Script for BG PDF Service (Gotenberg v8)
+#
+# Checks Gotenberg /health endpoint and optionally performs a full PDF conversion test.
+#
+# Usage:
+#   ./health-check.sh              # Basic health check
+#   ./health-check.sh --json       # JSON output (for Event Bus integration)
+#   ./health-check.sh --full       # Full test with PDF conversion
+#   ./health-check.sh --full --json
+#
+# Environment Variables:
+#   GOTENBERG_URL   - Base URL (default: http://localhost:3001)
+#   GOTENBERG_PORT  - Port override (default: 3001)
+#
+# Exit Codes:
+#   0 - Healthy
+#   1 - Unhealthy
+
+set -euo pipefail
+
+# ============================================================================
+# CONFIGURATION
+# ============================================================================
+
+GOTENBERG_PORT="${GOTENBERG_PORT:-3001}"
+GOTENBERG_URL="${GOTENBERG_URL:-http://localhost:${GOTENBERG_PORT}}"
+JSON_OUTPUT=false
+FULL_TEST=false
+
+# ============================================================================
+# ARGUMENT PARSING
+# ============================================================================
+
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    --json)
+      JSON_OUTPUT=true
+      shift
+      ;;
+    --full)
+      FULL_TEST=true
+      shift
+      ;;
+    *)
+      echo "Unknown option: $1"
+      echo "Usage: $0 [--json] [--full]"
+      exit 1
+      ;;
+  esac
+done
+
+# ============================================================================
+# HELPER FUNCTIONS
+# ============================================================================
+
+log() {
+  if [[ "$JSON_OUTPUT" == "false" ]]; then
+    echo "$@"
+  fi
+}
+
+error() {
+  if [[ "$JSON_OUTPUT" == "false" ]]; then
+    echo "ERROR: $*" >&2
+  fi
+}
+
+output_json() {
+  local status="$1"
+  local message="$2"
+  local chromium_status="${3:-unknown}"
+  local libreoffice_status="${4:-unknown}"
+
+  cat <<EOF
+{
+  "status": "$status",
+  "message": "$message",
+  "timestamp": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
+  "service": "bg-pdf-service",
+  "gotenberg_url": "$GOTENBERG_URL",
+  "engines": {
+    "chromium": "$chromium_status",
+    "libreoffice": "$libreoffice_status"
+  }
+}
+EOF
+}
+
+# ============================================================================
+# HEALTH CHECK
+# ============================================================================
+
+log "Checking Gotenberg health at $GOTENBERG_URL/health..."
+
+# Check if service is reachable
+if ! HEALTH_RESPONSE=$(curl -sf --max-time 5 "$GOTENBERG_URL/health" 2>/dev/null); then
+  error "Gotenberg is unreachable at $GOTENBERG_URL/health"
+  if [[ "$JSON_OUTPUT" == "true" ]]; then
+    output_json "unhealthy" "Service unreachable" "unknown" "unknown"
+  fi
+  exit 1
+fi
+
+# Parse JSON response
+if ! CHROMIUM_STATUS=$(echo "$HEALTH_RESPONSE" | grep -o '"chromium"[^}]*' | grep -o '"status":"[^"]*"' | cut -d'"' -f4); then
+  error "Failed to parse chromium status from health response"
+  if [[ "$JSON_OUTPUT" == "true" ]]; then
+    output_json "unhealthy" "Invalid health response format" "unknown" "unknown"
+  fi
+  exit 1
+fi
+
+if ! LIBREOFFICE_STATUS=$(echo "$HEALTH_RESPONSE" | grep -o '"libreoffice"[^}]*' | grep -o '"status":"[^"]*"' | cut -d'"' -f4); then
+  error "Failed to parse libreoffice status from health response"
+  if [[ "$JSON_OUTPUT" == "true" ]]; then
+    output_json "unhealthy" "Invalid health response format" "$CHROMIUM_STATUS" "unknown"
+  fi
+  exit 1
+fi
+
+# Verify engines are up
+if [[ "$CHROMIUM_STATUS" != "up" || "$LIBREOFFICE_STATUS" != "up" ]]; then
+  error "One or more engines are not healthy"
+  error "Chromium: $CHROMIUM_STATUS, LibreOffice: $LIBREOFFICE_STATUS"
+  if [[ "$JSON_OUTPUT" == "true" ]]; then
+    output_json "unhealthy" "Engines not ready" "$CHROMIUM_STATUS" "$LIBREOFFICE_STATUS"
+  fi
+  exit 1
+fi
+
+log "✓ Health check passed"
+log "  Chromium: $CHROMIUM_STATUS"
+log "  LibreOffice: $LIBREOFFICE_STATUS"
+
+# ============================================================================
+# FULL TEST (OPTIONAL)
+# ============================================================================
+
+if [[ "$FULL_TEST" == "true" ]]; then
+  log ""
+  log "Running full PDF conversion test..."
+
+  # Create temporary directory
+  TMP_DIR=$(mktemp -d)
+  trap 'rm -rf "$TMP_DIR"' EXIT
+
+  # Create test HTML file
+  TEST_HTML="$TMP_DIR/test.html"
+  cat > "$TEST_HTML" <<'HTMLEOF'
+<!DOCTYPE html>
+<html lang="de-AT">
+<head>
+  <meta charset="UTF-8">
+  <title>BG PDF Service Test</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      padding: 40px;
+      max-width: 800px;
+      margin: 0 auto;
+    }
+    h1 {
+      color: #2563eb;
+      border-bottom: 3px solid #2563eb;
+      padding-bottom: 10px;
+    }
+    .timestamp {
+      color: #64748b;
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+  <h1>BG PDF Service Health Check</h1>
+  <p class="timestamp">Generated: <script>document.write(new Date().toISOString())</script></p>
+  <p>This PDF was generated by <strong>bg-pdf-service</strong> using Gotenberg v8.</p>
+  <ul>
+    <li>Chromium Engine: ✓ Active</li>
+    <li>LibreOffice Engine: ✓ Active</li>
+    <li>HTML to PDF Conversion: ✓ Working</li>
+  </ul>
+</body>
+</html>
+HTMLEOF
+
+  # Convert to PDF
+  TEST_PDF="$TMP_DIR/test.pdf"
+  if ! curl -sf --max-time 10 \
+    --form "files=@$TEST_HTML" \
+    --output "$TEST_PDF" \
+    "$GOTENBERG_URL/forms/chromium/convert/html" > /dev/null 2>&1; then
+    error "PDF conversion test failed"
+    if [[ "$JSON_OUTPUT" == "true" ]]; then
+      output_json "unhealthy" "PDF conversion test failed" "$CHROMIUM_STATUS" "$LIBREOFFICE_STATUS"
+    fi
+    exit 1
+  fi
+
+  # Verify PDF was created and has content
+  if [[ ! -f "$TEST_PDF" ]]; then
+    error "PDF file was not created"
+    if [[ "$JSON_OUTPUT" == "true" ]]; then
+      output_json "unhealthy" "PDF file not created" "$CHROMIUM_STATUS" "$LIBREOFFICE_STATUS"
+    fi
+    exit 1
+  fi
+
+  PDF_SIZE=$(stat -f%z "$TEST_PDF" 2>/dev/null || stat -c%s "$TEST_PDF" 2>/dev/null)
+  if [[ "$PDF_SIZE" -lt 1000 ]]; then
+    error "PDF file is too small (${PDF_SIZE} bytes), likely corrupted"
+    if [[ "$JSON_OUTPUT" == "true" ]]; then
+      output_json "unhealthy" "PDF file too small" "$CHROMIUM_STATUS" "$LIBREOFFICE_STATUS"
+    fi
+    exit 1
+  fi
+
+  log "✓ Full PDF conversion test passed"
+  log "  Test PDF size: ${PDF_SIZE} bytes"
+fi
+
+# ============================================================================
+# SUCCESS OUTPUT
+# ============================================================================
+
+if [[ "$JSON_OUTPUT" == "true" ]]; then
+  output_json "healthy" "All checks passed" "$CHROMIUM_STATUS" "$LIBREOFFICE_STATUS"
+else
+  log ""
+  log "✅ BG PDF Service is healthy"
+fi
+
+exit 0

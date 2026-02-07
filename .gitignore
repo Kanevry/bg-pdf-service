@@ -1,0 +1,35 @@
+# Environment files (NEVER commit real env files!)
+.env
+.env.local
+.env.production
+.env.*.local
+!.env.example
+
+# Node
+node_modules/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Docker
+docker-compose.override.yml
+
+# Logs
+*.log
+
+# Secrets
+*.pem
+*.key
+*.cert
+*.crt
+credentials*
+secrets*
+
+# Test artifacts
+test-output/
+*.pdf

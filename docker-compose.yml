@@ -1,0 +1,25 @@
+services:
+  gotenberg:
+    image: gotenberg/gotenberg:8
+    container_name: bg-pdf-service
+    ports:
+      - "${GOTENBERG_PORT:-3001}:3000"
+    environment:
+      - CHROMIUM_RESTART_AFTER=${CHROMIUM_RESTART_AFTER:-50}
+      - CHROMIUM_AUTO_START=${CHROMIUM_AUTO_START:-true}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - API_TIMEOUT=${API_TIMEOUT:-60s}
+      - API_ROOT_PATH=${API_ROOT_PATH:-/}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+        reservations:
+          memory: 512M

@@ -1,0 +1,10 @@
+services:
+  gotenberg:
+    image: gotenberg/gotenberg:8
+    container_name: bg-pdf-service-dev
+    ports:
+      - "3001:3000"
+    environment:
+      - LOG_LEVEL=debug
+      - API_TIMEOUT=120s
+    restart: "no"

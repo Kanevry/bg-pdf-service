@@ -1,0 +1,6 @@
+#!/usr/bin/env sh
+
+# bg-pdf-service: Pre-commit secrets protection
+# Prevents accidental commit of sensitive data
+
+./scripts/check-secrets.sh

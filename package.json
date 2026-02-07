@@ -1,0 +1,33 @@
+{
+  "name": "bg-pdf-service",
+  "version": "1.0.0",
+  "description": "Self-hosted HTML-to-PDF service powered by Gotenberg",
+  "private": false,
+  "license": "MIT",
+  "author": "Bernhard Goetzendorfer",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Kanevry/bg-pdf-service.git"
+  },
+  "keywords": [
+    "gotenberg",
+    "pdf",
+    "html-to-pdf",
+    "docker",
+    "self-hosted"
+  ],
+  "scripts": {
+    "health": "./scripts/health-check.sh",
+    "health:json": "./scripts/health-check.sh --json",
+    "health:full": "./scripts/health-check.sh --full",
+    "start": "docker compose up -d",
+    "stop": "docker compose down",
+    "dev": "docker compose -f docker-compose.dev.yml up",
+    "logs": "docker compose logs -f gotenberg",
+    "prepare": "husky"
+  },
+  "devDependencies": {
+    "husky": "^9.1.7"
+  },
+  "packageManager": "pnpm@10.28.0"
+}
