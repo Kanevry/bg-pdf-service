@@ -2,17 +2,31 @@ services:
   gotenberg:
     image: gotenberg/gotenberg:8
     container_name: bg-pdf-service
+    command:
+      - "gotenberg"
+      - "--api-port=3000"
+      - "--api-enable-basic-auth"
+      - "--api-timeout=${API_TIMEOUT:-120s}"
+      - "--chromium-auto-start=${CHROMIUM_AUTO_START:-true}"
+      - "--chromium-restart-after=${CHROMIUM_RESTART_AFTER:-50}"
+      - "--chromium-max-queue-size=20"
+      - "--chromium-disable-javascript=true"
+      - "--chromium-clear-cache=true"
+      - "--chromium-clear-cookies=true"
+      - "--api-disable-download-from=true"
+      - "--webhook-disable=true"
+      - "--log-level=${LOG_LEVEL:-info}"
+      - "--log-format=json"
     ports:
-      - "${GOTENBERG_PORT:-3001}:3000"
+      - "127.0.0.1:${GOTENBERG_PORT:-3001}:3000"
     environment:
-      - CHROMIUM_RESTART_AFTER=${CHROMIUM_RESTART_AFTER:-50}
-      - CHROMIUM_AUTO_START=${CHROMIUM_AUTO_START:-true}
-      - LOG_LEVEL=${LOG_LEVEL:-info}
-      - API_TIMEOUT=${API_TIMEOUT:-60s}
-      - API_ROOT_PATH=${API_ROOT_PATH:-/}
+      - GOTENBERG_API_BASIC_AUTH_USERNAME=${GOTENBERG_API_BASIC_AUTH_USERNAME:-}
+      - GOTENBERG_API_BASIC_AUTH_PASSWORD=${GOTENBERG_API_BASIC_AUTH_PASSWORD:-}
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
     healthcheck:
-      test: ["CMD", "curl", "-sf", "http://localhost:3000/health"]
+      test: ["CMD", "curl", "-sf", "-u", "${GOTENBERG_API_BASIC_AUTH_USERNAME}:${GOTENBERG_API_BASIC_AUTH_PASSWORD}", "http://localhost:3000/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -21,5 +35,9 @@ services:
       resources:
         limits:
           memory: 2G
+          cpus: '2.0'
         reservations:
           memory: 512M
+          cpus: '0.5'
+    tmpfs:
+      - /tmp:size=512M

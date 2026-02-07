@@ -1,0 +1,61 @@
+# bg-pdf-service Caddy Reverse Proxy Configuration
+#
+# This file is a TEMPLATE. Copy and customize for your deployment:
+#   sudo cp Caddyfile.example /etc/caddy/Caddyfile
+#
+# Replace:
+#   - YOUR_DOMAIN with your domain (e.g., pdf.example.com)
+#   - YOUR_BEARER_TOKEN with a secure random token (openssl rand -hex 32)
+
+YOUR_DOMAIN {
+    # Security Headers
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        X-Content-Type-Options nosniff
+        X-Frame-Options DENY
+        X-Robots-Tag "noindex, nofollow"
+        -Server
+    }
+
+    # Request size limit (adjust for your use case)
+    request_body {
+        max_size 50MB
+    }
+
+    # Health endpoint (no auth required)
+    handle /health {
+        reverse_proxy localhost:3001
+    }
+
+    # All other endpoints (Bearer Token required)
+    handle {
+        route {
+            @authorized {
+                header Authorization "Bearer YOUR_BEARER_TOKEN"
+            }
+
+            # Forward to Gotenberg with Basic Auth
+            # Replace the Base64 value with: echo -n "username:password" | base64
+            reverse_proxy @authorized localhost:3001 {
+                header_up Authorization "Basic YOUR_BASE64_BASIC_AUTH"
+                transport http {
+                    dial_timeout 5s
+                    response_header_timeout 120s
+                }
+            }
+
+            # Reject unauthorized requests
+            respond 401 {
+                close
+            }
+        }
+    }
+
+    # Access logging
+    log {
+        output file /var/log/caddy/access.log {
+            roll_size 10MB
+            roll_keep 5
+        }
+    }
+}
